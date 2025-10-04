@@ -13,5 +13,4 @@ homepage = "https://github.com/share121/inherit-config"
 
 
 [workspace.dependencies]
-inherit-config = { path = "./core" }
-inherit-config-derive = { path = "./derive" }
+inherit-config = "0.1.0"
