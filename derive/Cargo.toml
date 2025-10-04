@@ -1,6 +1,6 @@
 [package]
 name = "inherit-config-derive"
-version = "0.1.0"
+version = "0.1.1"
 description = "A derive macro to inherit config from parent struct"
 edition.workspace = true
 authors.workspace = true
@@ -16,5 +16,5 @@ proc-macro = true
 [dependencies]
 syn = "2.0"
 quote = "1.0"
-proc-macro2 = "1.0.101"
+proc-macro2 = "1.0"
 inherit-config.workspace = true

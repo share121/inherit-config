@@ -55,9 +55,7 @@ fn generate_default_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
             Some(expr) => quote! { #expr },
             None => quote! { <#field_ty as ::core::default::Default>::default() },
         };
-        quote! {
-            #field_name: #default_expr
-        }
+        quote! { #field_name: #default_expr }
     });
     quote! {
         impl ::core::default::Default for #struct_name {
@@ -74,9 +72,7 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
     let field_inherits = fields.iter().map(|field| {
         let field_name = field.ident;
         if field.config.skip_inherit {
-            quote! {
-                #field_name: self.#field_name.clone()
-            }
+            quote! { #field_name: self.#field_name.clone() }
         } else {
             quote! {
                 #field_name: ::inherit_config::InheritAble::inherit(&self.#field_name, &other.#field_name)
@@ -94,7 +90,6 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
     }
 }
 
-/// Parses the `#[config(...)]` attributes for a given field.
 fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<FieldConfig> {
     let mut config = FieldConfig::default();
     for attr in attrs {
@@ -104,7 +99,6 @@ fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<FieldConfig> {
         let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for meta in nested {
             match meta {
-                // This matches `default = "..."`
                 Meta::NameValue(nv) if nv.path.is_ident("default") => {
                     if config.default.is_some() {
                         return Err(syn::Error::new_spanned(
@@ -114,11 +108,9 @@ fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<FieldConfig> {
                     }
                     config.default = Some(nv.value);
                 }
-                // This matches `skip_inherit`
                 Meta::Path(path) if path.is_ident("skip_inherit") => {
                     config.skip_inherit = true;
                 }
-                // All other attributes are unsupported.
                 _ => {
                     return Err(syn::Error::new_spanned(
                         meta,

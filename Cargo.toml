@@ -11,6 +11,5 @@ keywords = ["config", "inherit"]
 readme = "README.md"
 homepage = "https://github.com/share121/inherit-config"
 
-
 [workspace.dependencies]
-inherit-config = "0.1.0"
+inherit-config = { version = "0.1.1", path = "core" }

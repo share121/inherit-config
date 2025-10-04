@@ -4,11 +4,11 @@ version = 4
 
 [[package]]
 name = "inherit-config"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "inherit-config-derive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "inherit-config",
  "proc-macro2",
