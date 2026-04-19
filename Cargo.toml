@@ -3,7 +3,7 @@ resolver = "2"
 members = ["core", "derive"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["share121 <me@s121.top>"]
 license = "MIT"
@@ -14,7 +14,7 @@ readme = "README.md"
 homepage = "https://github.com/share121/inherit-config"
 
 [workspace.dependencies]
-inherit-config = { version = "0.1", path = "core" }
+inherit-config-derive = { version = "0.1", path = "derive" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

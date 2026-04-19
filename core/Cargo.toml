@@ -11,5 +11,11 @@ keywords.workspace = true
 readme.workspace = true
 homepage.workspace = true
 
+[dependencies]
+inherit-config-derive = { workspace = true, optional = true }
+
+[features]
+derive = ["dep:inherit-config-derive"]
+
 [lints]
 workspace = true

@@ -16,7 +16,7 @@
 
 ### 核心组件
 
-- **`InheritAble` Trait**: 一个简单的 trait，定义了 `inherit(&self, other: &Self) -> Self` 方法，用于实现继承逻辑。
+- **`InheritAble` Trait**: 一个简单的 trait，定义了 `inherit(&self, other: &Self) -> Self` 方法，用于实现继承逻辑；定义了 `fn simplify(&mut self, other: &Self)`，用于化简配置。
 - **`ConfigField<T>` Enum**: 一个辅助枚举，用于表示一个配置项的三种状态：
   - `Inherit`: 字段应从父配置继承其值。这是默认状态。
   - `Set(T)`: 字段有一个明确设置的值，它将覆盖父配置。
@@ -29,15 +29,20 @@
 
 ```toml
 [dependencies]
-inherit-config = "0.1.0" # 核心 trait 和类型
-inherit-config-derive = "0.1.0" # 派生宏
+inherit-config = { version = "0.1.1", features = ["derive"] } # 包含核心 trait 和派生宏
+```
+
+如果只需要核心 trait 和类型而不需要派生宏，可以省略 `features`：
+
+```toml
+[dependencies]
+inherit-config = "0.1.1"
 ```
 
 ## 使用方法
 
 ```rust
-use inherit_config::{ConfigField, InheritAble};
-use inherit_config_derive::Config;
+use inherit_config::{ConfigField, InheritAble, Config};
 
 #[derive(Clone, Config)]
 struct AppConfig {

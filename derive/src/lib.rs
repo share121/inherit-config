@@ -1,3 +1,7 @@
+#![no_std]
+#![doc = include_str!("../../README.md")]
+
+extern crate alloc;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
@@ -31,7 +35,7 @@ pub fn config_derive(input: TokenStream) -> TokenStream {
     else {
         panic!("Config can only be derived for structs with named fields")
     };
-    let parsed_fields: Vec<_> = fields
+    let parsed_fields: alloc::vec::Vec<_> = fields
         .named
         .iter()
         .map(|field| ParsedField {
