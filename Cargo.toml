@@ -10,7 +10,7 @@ license = "MIT"
 repository = "https://github.com/share121/inherit-config"
 categories = ["config"]
 keywords = ["config", "inherit"]
-readme = "../../README.md"
+readme = "README.md"
 homepage = "https://github.com/share121/inherit-config"
 
 [workspace.dependencies]
