@@ -62,9 +62,11 @@ pub fn config_derive(input: TokenStream) -> TokenStream {
     }
     let default_impl = generate_default_impl(struct_name, &parsed_fields);
     let inherit_impl = generate_inherit_impl(struct_name, &parsed_fields);
+    let methods_impl = generate_methods_impl(struct_name, &parsed_fields);
     quote! {
         #default_impl
         #inherit_impl
+        #methods_impl
     }
     .into()
 }
@@ -113,6 +115,8 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
     });
     quote! {
         impl ::inherit_config::InheritAble for #struct_name {
+            type Inner = Self;
+
             fn inherit(&self, other: &Self) -> Self {
                 Self {
                     #(#field_inherits),*
@@ -121,6 +125,41 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
             fn simplify(&mut self, other: &Self) {
                 #(#field_simplify)*
             }
+            fn unwrap(self) -> Self::Inner {
+                self
+            }
+        }
+    }
+}
+
+fn generate_methods_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_macro2::TokenStream {
+    let getters = fields.iter().map(|field| {
+        let field_name = field.ident;
+        let field_ty = field.ty;
+        let default_expr = field.config.default.as_ref().map_or_else(
+            || quote! { <#field_ty as ::core::default::Default>::default() },
+            |expr| quote! { #expr },
+        );
+        if field.config.skip_inherit {
+            quote! {
+                #[inline]
+                pub fn #field_name(&self) -> #field_ty {
+                    self.#field_name.clone()
+                }
+            }
+        } else {
+            quote! {
+                #[inline]
+                pub fn #field_name(&self) -> <#field_ty as ::inherit_config::InheritAble>::Inner {
+                    ::inherit_config::InheritAble::unwrap(::inherit_config::InheritAble::inherit(&self.#field_name, &#default_expr))
+                }
+            }
+        }
+    });
+
+    quote! {
+        impl #struct_name {
+            #(#getters)*
         }
     }
 }

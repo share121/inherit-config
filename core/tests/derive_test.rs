@@ -36,4 +36,6 @@ fn test_derive_macro() {
     assert_eq!(inherited.field2, Some(99));
     // field3 skips inherit, remains child's value
     assert_eq!(inherited.field3, 200);
+    // 使用 get 方法
+    assert_eq!(child.field2(), 42);
 }

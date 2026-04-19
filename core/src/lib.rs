@@ -21,12 +21,17 @@ impl<T> ConfigField<T> {
 }
 
 pub trait InheritAble {
+    type Inner;
+
     #[must_use]
     fn inherit(&self, other: &Self) -> Self;
     fn simplify(&mut self, other: &Self);
+    fn unwrap(self) -> Self::Inner;
 }
 
 impl<T: Clone + PartialEq> InheritAble for ConfigField<T> {
+    type Inner = T;
+
     fn inherit(&self, other: &Self) -> Self {
         match self {
             &Self::Inherit => other,
@@ -39,9 +44,17 @@ impl<T: Clone + PartialEq> InheritAble for ConfigField<T> {
             *self = Self::Inherit;
         }
     }
+    fn unwrap(self) -> Self::Inner {
+        match self {
+            Self::Set(t) => t,
+            _ => panic!("Cannot unwrap a ConfigField that is not set"),
+        }
+    }
 }
 
 impl<T: Clone + PartialEq> InheritAble for Option<T> {
+    type Inner = T;
+
     fn inherit(&self, other: &Self) -> Self {
         match self {
             None => other,
@@ -53,6 +66,9 @@ impl<T: Clone + PartialEq> InheritAble for Option<T> {
         if self == other {
             *self = None;
         }
+    }
+    fn unwrap(self) -> Self::Inner {
+        self.unwrap()
     }
 }
 
