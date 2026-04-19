@@ -32,7 +32,12 @@ pub fn config_derive(input: TokenStream) -> TokenStream {
         ..
     }) = &ast.data
     else {
-        panic!("Config can only be derived for structs with named fields")
+        return syn::Error::new(
+            ast.ident.span(),
+            "Config macro only supports structs with named fields",
+        )
+        .to_compile_error()
+        .into();
     };
     let parsed_fields: alloc::vec::Vec<_> = fields
         .named
