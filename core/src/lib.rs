@@ -26,18 +26,32 @@ pub trait InheritAble {
     fn simplify(&mut self, other: &Self);
 }
 
-impl<T: Clone + Default + PartialEq> InheritAble for T {
+impl<T: Clone + PartialEq> InheritAble for ConfigField<T> {
     fn inherit(&self, other: &Self) -> Self {
-        if self == &Self::default() {
-            other
-        } else {
-            self
+        match self {
+            &Self::Inherit => other,
+            _ => self,
         }
         .clone()
     }
     fn simplify(&mut self, other: &Self) {
         if self == other {
-            *self = Self::default();
+            *self = Self::Inherit;
+        }
+    }
+}
+
+impl<T: Clone + PartialEq> InheritAble for Option<T> {
+    fn inherit(&self, other: &Self) -> Self {
+        match self {
+            None => other,
+            _ => self,
+        }
+        .clone()
+    }
+    fn simplify(&mut self, other: &Self) {
+        if self == other {
+            *self = None;
         }
     }
 }
@@ -102,57 +116,6 @@ mod tests {
     }
 
     #[test]
-    fn test_string_inherit() {
-        let parent_a = "parent_a";
-        let parent_b = "";
-
-        let child_a = "child_a";
-        let child_b = "";
-
-        // 当子级为 "" 时，它应该从父级继承
-        assert_eq!(child_b.inherit(&parent_a), parent_a);
-        assert_eq!(child_b.inherit(&parent_b), parent_b);
-
-        // 当子级不为 "" 时，它应该保持自己的值
-        assert_eq!(child_a.inherit(&parent_a), child_a);
-        assert_eq!(child_a.inherit(&parent_b), child_a);
-    }
-
-    #[test]
-    fn test_bool_inherit() {
-        let parent_true = true;
-        let parent_false = false;
-
-        let child_true = true;
-        let child_false = false;
-
-        // 当子级为 false 时，它应该从父级继承
-        assert_eq!(child_false.inherit(&parent_true), parent_true);
-        assert_eq!(child_false.inherit(&parent_false), parent_false);
-
-        // 当子级为 true 时，它应该保持自己的值
-        assert_eq!(child_true.inherit(&parent_true), child_true);
-        assert_eq!(child_true.inherit(&parent_false), child_true);
-    }
-
-    #[test]
-    fn test_number_inherit() {
-        let parent_100 = 100;
-        let parent_0 = 0;
-
-        let child_200 = 200;
-        let child_0 = 0;
-
-        // 当子级为 0 时，它应该从父级继承
-        assert_eq!(child_0.inherit(&parent_100), parent_100);
-        assert_eq!(child_0.inherit(&parent_0), parent_0);
-
-        // 当子级不为 0 时，它应该保持自己的值
-        assert_eq!(child_200.inherit(&parent_100), child_200);
-        assert_eq!(child_200.inherit(&parent_0), child_200);
-    }
-
-    #[test]
     fn test_simplify_logic() {
         let parent = ConfigField::Set(100);
         let mut child = ConfigField::Set(100); // 子级和父级值一样
@@ -172,39 +135,5 @@ mod tests {
 
         assert_eq!(child, None);
         assert_eq!(child.inherit(&parent), Some(50));
-    }
-
-    #[test]
-    fn test_simplify_str() {
-        let parent = "hello";
-        let mut child = "hello";
-
-        child.simplify(&parent);
-
-        assert_eq!(child, "");
-        assert_eq!(child.inherit(&parent), "hello");
-    }
-
-    #[test]
-    #[allow(clippy::bool_assert_comparison)]
-    fn test_simplify_bool() {
-        let parent = true;
-        let mut child = true;
-
-        child.simplify(&parent);
-
-        assert_eq!(child, false);
-        assert_eq!(child.inherit(&parent), true);
-    }
-
-    #[test]
-    fn test_simplify_number() {
-        let parent = 100;
-        let mut child = 100;
-
-        child.simplify(&parent);
-
-        assert_eq!(child, 0);
-        assert_eq!(child.inherit(&parent), 100);
     }
 }

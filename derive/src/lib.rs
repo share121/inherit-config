@@ -13,6 +13,8 @@ struct FieldConfig {
     default: Option<Expr>,
     /// A flag for `#[config(skip_inherit)]`
     skip_inherit: bool,
+    /// A flag for `#[config(skip_simplify)]`
+    skip_simplify: bool,
 }
 
 struct ParsedField<'a> {
@@ -39,15 +41,25 @@ pub fn config_derive(input: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     };
+    let mut diagnostics = alloc::vec::Vec::new();
     let parsed_fields: alloc::vec::Vec<_> = fields
         .named
         .iter()
-        .map(|field| ParsedField {
-            ident: &field.ident,
-            ty: &field.ty,
-            config: parse_field_config(&field.attrs).unwrap(),
+        .filter_map(|field| match parse_field_config(&field.attrs) {
+            Ok(cfg) => Some(ParsedField {
+                ident: &field.ident,
+                ty: &field.ty,
+                config: cfg,
+            }),
+            Err(e) => {
+                diagnostics.push(e.to_compile_error());
+                None
+            }
         })
         .collect();
+    if !diagnostics.is_empty() {
+        return quote! { #(#diagnostics)* }.into();
+    }
     let default_impl = generate_default_impl(struct_name, &parsed_fields);
     let inherit_impl = generate_inherit_impl(struct_name, &parsed_fields);
     quote! {
@@ -89,10 +101,14 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
             }
         }
     });
-    let field_simplify = fields.iter().map(|field| {
+    let field_simplify = fields.iter().filter_map(|field| {
         let field_name = field.ident;
-        quote! {
-            ::inherit_config::InheritAble::simplify(&mut self.#field_name, &other.#field_name);
+        if field.config.skip_simplify {
+            None
+        } else {
+            Some(quote! {
+                ::inherit_config::InheritAble::simplify(&mut self.#field_name, &other.#field_name);
+            })
         }
     });
     quote! {
@@ -129,6 +145,9 @@ fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<FieldConfig> {
                 }
                 Meta::Path(path) if path.is_ident("skip_inherit") => {
                     config.skip_inherit = true;
+                }
+                Meta::Path(path) if path.is_ident("skip_simplify") => {
+                    config.skip_simplify = true;
                 }
                 _ => {
                     return Err(syn::Error::new_spanned(

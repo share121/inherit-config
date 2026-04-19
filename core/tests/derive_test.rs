@@ -8,7 +8,7 @@ struct TestConfig {
     field1: ConfigField<String>,
     #[config(default = Some(42))]
     field2: Option<u32>,
-    #[config(default = 100, skip_inherit)]
+    #[config(default = 100, skip_inherit, skip_simplify)]
     field3: i32,
 }
 
