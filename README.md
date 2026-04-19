@@ -49,7 +49,7 @@ struct AppConfig {
     #[config(default = ConfigField::Unset)]
     proxy: ConfigField<String>,
 
-    #[config(default = ConfigField::Set("Referer: https://example.com/"))]
+    #[config(default = ConfigField::Set("Referer: https://example.com/".to_string()))]
     headers: ConfigField<String>,
 
     #[config(default = Some(16))]
@@ -68,7 +68,7 @@ fn main() {
     let mut local_config = AppConfig {
         proxy: ConfigField::Inherit,
         headers: ConfigField::Unset,
-        font_size: ConfigField::Set(12),
+        font_size: Some(12),
         foo: 2,
     };
 
@@ -79,7 +79,7 @@ fn main() {
     assert_eq!(final_config, AppConfig {
         proxy: ConfigField::Unset, // 继承自 `global_config`
         headers: ConfigField::Unset, // 覆盖 `global_config` 的值
-        font_size: ConfigField::Set(12), // 覆盖 `global_config` 的值
+        font_size: Some(12), // 覆盖 `global_config` 的值
         foo: 2, // 覆盖 `global_config` 的值
     });
 }

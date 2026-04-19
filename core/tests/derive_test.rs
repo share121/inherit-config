@@ -1,7 +1,7 @@
-#[cfg(feature = "derive")]
+#![cfg(feature = "derive")]
+
 use inherit_config::{Config, ConfigField, InheritAble};
 
-#[cfg(feature = "derive")]
 #[derive(Clone, Config)]
 struct TestConfig {
     #[config(default = ConfigField::Unset)]
@@ -12,7 +12,6 @@ struct TestConfig {
     field3: i32,
 }
 
-#[cfg(feature = "derive")]
 #[test]
 fn test_derive_macro() {
     let default_config = TestConfig::default();

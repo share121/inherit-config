@@ -1,5 +1,4 @@
 #![no_std]
-#![doc = include_str!("../README.md")]
 
 #[cfg(feature = "derive")]
 pub use inherit_config_derive::Config;
