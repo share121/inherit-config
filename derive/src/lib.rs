@@ -84,12 +84,21 @@ fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
             }
         }
     });
+    let field_simplify = fields.iter().map(|field| {
+        let field_name = field.ident;
+        quote! {
+            ::inherit_config::InheritAble::simplify(&mut self.#field_name, &other.#field_name);
+        }
+    });
     quote! {
         impl ::inherit_config::InheritAble for #struct_name {
             fn inherit(&self, other: &Self) -> Self {
                 Self {
                     #(#field_inherits),*
                 }
+            }
+            fn simplify(&mut self, other: &Self) {
+                #(#field_simplify)*
             }
         }
     }
