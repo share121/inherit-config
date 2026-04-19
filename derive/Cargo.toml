@@ -1,11 +1,12 @@
 [package]
 name = "inherit-config-derive"
-version = "0.1.1"
 description = "A derive macro to inherit config from parent struct"
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+categories.workspace = true
 keywords.workspace = true
 readme.workspace = true
 homepage.workspace = true
@@ -18,3 +19,6 @@ syn = "2.0"
 quote = "1.0"
 proc-macro2 = "1.0"
 inherit-config.workspace = true
+
+[lints]
+workspace = true

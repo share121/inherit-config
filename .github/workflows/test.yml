@@ -1,81 +1,160 @@
 name: Test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
 
 permissions:
   contents: read
 
 jobs:
-  check:
-    name: Tests
+  format:
+    name: Format Check
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        channel:
-          - stable
-          - beta
-          - nightly
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "ubuntu-nightly"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Run Clippy
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo hack clippy --feature-powerset
+
+  test:
+    name: Test (${{ matrix.os }} - ${{ matrix.channel }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        channel: [stable, beta, nightly]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.channel }}
-          components: clippy
-
-      - name: Configure sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
-      - name: Set Rust Caching Env
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - name: Test
-        run: cargo test --verbose
-
-      - name: Build
-        run: cargo build --verbose
-
-      - name: Clippy
-        run: cargo clippy --verbose -- -Dwarnings
-
-  check-minimal:
-    name: Check minimal versions
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
         with:
-          toolchain: nightly
+          shared-key: "${{ matrix.os }}-${{ matrix.channel }}"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Run Tests
+        run: cargo hack test --feature-powerset --depth 1 --verbose
 
-      - name: Configure sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
-      - name: Set Rust Caching Env
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - name: Check minimal versions
-        run: cargo check -Z minimal-versions
-
-  format:
+  deny:
+    name: Cargo Deny
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install latest stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
         with:
-          toolchain: stable
-          components: rustfmt
+          shared-key: "ubuntu-stable"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Run Deny
+        run: cargo deny --all-features check
 
-      - name: Run rustfmt
-        run: cargo fmt --check
+  udeps:
+    name: Unused Deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "ubuntu-nightly"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-hack & cargo-udeps
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack,cargo-udeps
+      - name: Run Udeps
+        run: cargo hack udeps --feature-powerset
+
+  docs:
+    name: Doc Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "ubuntu-stable"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Run Doc Check
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo hack doc --feature-powerset --no-deps
+
+  minimal-versions:
+    name: Minimal Versions Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "ubuntu-nightly"
+          add-job-id-key: "false"
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Check with minimal versions
+        run: cargo hack check --feature-powerset -Z minimal-versions

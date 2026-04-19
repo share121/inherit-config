@@ -1,11 +1,15 @@
 [package]
 name = "inherit-config"
-version = "0.1.1"
 description = "Inherit configuration from parent struct"
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+categories.workspace = true
 keywords.workspace = true
 readme.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true

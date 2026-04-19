@@ -2,7 +2,9 @@
 
 [![GitHub last commit](https://img.shields.io/github/last-commit/share121/inherit-config/master)](https://github.com/share121/inherit-config/commits/master)
 [![Test](https://github.com/share121/inherit-config/workflows/Test/badge.svg)](https://github.com/share121/inherit-config/actions)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/share121/inherit-config/blob/master/LICENSE)
+[![Latest version](https://img.shields.io/crates/v/inherit-config.svg)](https://crates.io/crates/inherit-config)
+[![Documentation](https://docs.rs/inherit-config/badge.svg)](https://docs.rs/inherit-config)
+[![License](https://img.shields.io/crates/l/inherit-config.svg)](https://github.com/share121/inherit-config/blob/master/LICENSE)
 
 一个 Rust 库，提供了一个派生宏（derive macro）来轻松实现可继承的配置模式。
 

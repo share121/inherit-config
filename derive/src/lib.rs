@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Data, DataStruct, DeriveInput, Expr, Fields, Ident, Meta, Token, Type, punctuated::Punctuated,
+    punctuated::Punctuated, Data, DataStruct, DeriveInput, Expr, Fields, Ident, Meta, Token, Type,
 };
 
 #[derive(Default)]
@@ -18,16 +18,18 @@ struct ParsedField<'a> {
     config: FieldConfig,
 }
 
+/// # Panics
+/// Panics if the input is not a `DataStruct`.
 #[proc_macro_derive(Config, attributes(config))]
 pub fn config_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let struct_name = &ast.ident;
-    let fields = match &ast.data {
-        Data::Struct(DataStruct {
-            fields: Fields::Named(fields),
-            ..
-        }) => fields,
-        _ => panic!("Config can only be derived for structs with named fields"),
+    let Data::Struct(DataStruct {
+        fields: Fields::Named(fields),
+        ..
+    }) = &ast.data
+    else {
+        panic!("Config can only be derived for structs with named fields")
     };
     let parsed_fields: Vec<_> = fields
         .named
@@ -51,10 +53,10 @@ fn generate_default_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_ma
     let field_defaults = fields.iter().map(|field| {
         let field_name = field.ident;
         let field_ty = field.ty;
-        let default_expr = match &field.config.default {
-            Some(expr) => quote! { #expr },
-            None => quote! { <#field_ty as ::core::default::Default>::default() },
-        };
+        let default_expr = field.config.default.as_ref().map_or_else(
+            || quote! { <#field_ty as ::core::default::Default>::default() },
+            |expr| quote! { #expr },
+        );
         quote! { #field_name: #default_expr }
     });
     quote! {

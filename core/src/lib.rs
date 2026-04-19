@@ -8,24 +8,36 @@ pub enum ConfigField<T> {
 }
 
 impl<T> ConfigField<T> {
-    pub fn get(&self) -> Option<&T> {
+    pub const fn get(&self) -> Option<&T> {
         match self {
-            ConfigField::Set(t) => Some(t),
+            Self::Set(t) => Some(t),
             _ => None,
         }
     }
 }
 
-pub trait InheritAble: Clone {
-    fn inherit(&self, _other: &Self) -> Self {
+pub trait InheritAble {
+    #[must_use]
+    fn inherit(&self, _other: &Self) -> Self
+    where
+        Self: Clone,
+    {
         self.clone()
+    }
+    fn simplify(&mut self, other: &Self)
+    where
+        Self: Default + PartialEq,
+    {
+        if self == other {
+            *self = Self::default();
+        }
     }
 }
 
 impl<T: Clone> InheritAble for ConfigField<T> {
     fn inherit(&self, other: &Self) -> Self {
         match self {
-            ConfigField::Inherit => other,
+            &Self::Inherit => other,
             _ => self,
         }
         .clone()
@@ -105,5 +117,30 @@ mod tests {
         // 当子级为 Some 时，它应该保持自己的值
         assert_eq!(child_some.inherit(&parent_some), child_some);
         assert_eq!(child_some.inherit(&parent_none), child_some);
+    }
+
+    #[test]
+    fn test_simplify_logic() {
+        let parent = ConfigField::Set(100);
+        let mut child = ConfigField::Set(100); // 子级和父级值一样
+
+        child.simplify(&parent);
+
+        // 预期：子级变成了 Inherit
+        assert_eq!(child, ConfigField::Inherit);
+
+        // 验证：化简后，继承出来的最终结果依然是 100
+        assert_eq!(child.inherit(&parent), ConfigField::Set(100));
+    }
+
+    #[test]
+    fn test_simplify_option() {
+        let parent = Some(50);
+        let mut child = Some(50);
+
+        child.simplify(&parent);
+
+        // 预期：Some(50) 变成了 None
+        assert_eq!(child, None);
     }
 }
