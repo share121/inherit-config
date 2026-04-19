@@ -10,7 +10,6 @@ version = "0.1.1"
 name = "inherit-config-derive"
 version = "0.1.1"
 dependencies = [
- "inherit-config",
  "proc-macro2",
  "quote",
  "syn",

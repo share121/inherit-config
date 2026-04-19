@@ -3,7 +3,7 @@ version = 2
 
 [licenses]
 version = 2
-allow = ["MIT"]
+allow = ["MIT", "Unicode-3.0"]
 confidence-threshold = 1.0
 
 [bans]
