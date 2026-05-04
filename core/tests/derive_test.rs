@@ -1,41 +1,132 @@
-#![cfg(feature = "derive")]
+use inherit_config::{ConfigLayer, InheritConfig};
 
-use inherit_config::{Config, ConfigField, InheritAble};
+#[derive(InheritConfig, Clone, Debug)]
+pub struct RetryConfig {
+    #[config(default = 3)]
+    pub max_retries: usize,
 
-#[derive(Clone, Config)]
-struct TestConfig {
-    #[config(default = ConfigField::Unset)]
-    field1: ConfigField<String>,
-    #[config(default = Some(42))]
-    field2: Option<u32>,
-    #[config(default = 100, skip_inherit, skip_simplify)]
-    field3: i32,
+    #[config(default_t = String::from("exponential"))]
+    pub strategy: String,
+}
+
+#[derive(InheritConfig, Clone, Debug)]
+pub struct DownloadConfig {
+    #[config(default = 32)]
+    pub threads: usize,
+
+    #[config(default_t = String::from("system"))]
+    pub proxy: String,
+
+    #[config(nest)]
+    pub retry: RetryConfig,
+}
+
+#[derive(InheritConfig, Clone, Debug)]
+pub struct Task {
+    #[config(default_t = String::from("http://default.com"))]
+    pub url: String,
+
+    #[config(nest)]
+    pub config: DownloadConfig,
 }
 
 #[test]
-fn test_derive_macro() {
-    let default_config = TestConfig::default();
-    assert!(matches!(default_config.field1, ConfigField::Unset));
-    assert_eq!(default_config.field2, Some(42));
-    assert_eq!(default_config.field3, 100);
+fn test_default_build() {
+    // 创建一个完全为空的 Partial 对象
+    let empty_partial = PartialTask::default();
 
-    let child = TestConfig {
-        field1: ConfigField::Inherit,
-        field2: None,
-        field3: 200,
+    // 固化为全量对象
+    let full_task = empty_partial.build();
+
+    // 验证：是否正确应用了默认值和 default_with 表达式
+    assert_eq!(full_task.url, "http://default.com");
+    assert_eq!(full_task.config.threads, 32);
+    assert_eq!(full_task.config.proxy, "system");
+    assert_eq!(full_task.config.retry.max_retries, 3);
+    assert_eq!(full_task.config.retry.strategy, "exponential");
+}
+
+#[test]
+fn test_inherit_logic() {
+    // 模拟全局配置（父节点）
+    let parent = PartialDownloadConfig {
+        threads: Some(16),
+        proxy: Some("parent_proxy".to_string()),
+        retry: Some(PartialRetryConfig {
+            max_retries: Some(5),
+            strategy: None, // 留空，测试是否回退到 default
+        }),
     };
-    let parent = TestConfig {
-        field1: ConfigField::Set("hello".to_string()),
-        field2: Some(99),
-        field3: 300,
+
+    // 模拟任务配置（子节点）
+    let mut child = PartialDownloadConfig {
+        threads: Some(8), // 覆盖父节点
+        proxy: None,      // 留空，应该继承父节点
+        retry: Some(PartialRetryConfig {
+            max_retries: None,                    // 留空，继承父节点
+            strategy: Some("linear".to_string()), // 覆盖
+        }),
     };
-    let inherited = child.inherit(&parent);
-    // field1 inherits from parent because child is Inherit
-    assert!(matches!(inherited.field1, ConfigField::Set(ref s) if s == "hello"));
-    // field2 is None, inherits from parent Some(99)
-    assert_eq!(inherited.field2, Some(99));
-    // field3 skips inherit, remains child's value
-    assert_eq!(inherited.field3, 200);
-    // 使用 get 方法
-    assert_eq!(child.field2(), 42);
+
+    // 执行继承合并
+    child.inherit_from(&parent);
+
+    // 验证合并后的 Partial 状态
+    assert_eq!(child.threads, Some(8));
+    assert_eq!(child.proxy, Some("parent_proxy".to_string()));
+
+    let child_retry = child.retry.as_ref().unwrap();
+    assert_eq!(child_retry.max_retries, Some(5));
+    assert_eq!(child_retry.strategy, Some("linear".to_string()));
+
+    // 验证 Build 后的最终结果
+    let full = child.build();
+    assert_eq!(full.threads, 8);
+    assert_eq!(full.proxy, "parent_proxy");
+    assert_eq!(full.retry.max_retries, 5);
+    // 这里验证了 None 在 build 时触发默认值逻辑
+    assert_eq!(full.retry.strategy, "linear");
+}
+
+#[test]
+fn test_simplify_logic_for_diff_saving() {
+    // 模拟系统全局配置
+    let parent = PartialTask {
+        url: None,
+        config: Some(PartialDownloadConfig {
+            threads: Some(100),
+            proxy: Some("global_proxy".to_string()),
+            retry: Some(PartialRetryConfig {
+                max_retries: Some(10),
+                strategy: Some("fixed".to_string()),
+            }),
+        }),
+    };
+
+    // 模拟在 UI 或代码中被修改过的具体任务配置
+    let mut child = PartialTask {
+        url: Some("http://example.com/file.zip".to_string()),
+        config: Some(PartialDownloadConfig {
+            threads: Some(100),                     // 与父节点相同，应该被化简掉 (None)
+            proxy: Some("local_proxy".to_string()), // 与父节点不同，保留
+            retry: Some(PartialRetryConfig {
+                max_retries: Some(10),               // 与父节点相同 -> None
+                strategy: Some("fixed".to_string()), // 与父节点相同 -> None
+            }),
+        }),
+    };
+
+    // 执行化简（核心功能：差分保存）
+    child.simplify_from(&parent);
+
+    // 验证：相同的字段全部变成了 None
+    assert_eq!(child.url, Some("http://example.com/file.zip".to_string()));
+
+    let child_config = child.config.unwrap();
+    assert_eq!(child_config.threads, None); // 被成功化简
+    assert_eq!(child_config.proxy, Some("local_proxy".to_string())); // 保留了差异
+
+    let child_retry = child_config.retry.unwrap();
+    assert_eq!(child_retry.max_retries, None); // 被成功化简
+    assert_eq!(child_retry.strategy, None); // 被成功化简
 }

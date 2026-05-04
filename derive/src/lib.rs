@@ -1,201 +1,225 @@
-#![no_std]
-
-extern crate alloc;
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{
-    punctuated::Punctuated, Data, DataStruct, DeriveInput, Expr, Fields, Ident, Meta, Token, Type,
-};
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Expr, Field, Fields, Type};
 
-#[derive(Default)]
-struct FieldConfig {
-    /// The expression provided in `#[config(default = ...)]`
-    default: Option<Expr>,
-    /// A flag for `#[config(skip_inherit)]`
-    skip_inherit: bool,
-    /// A flag for `#[config(skip_simplify)]`
-    skip_simplify: bool,
+enum FieldStrategy {
+    None,
+    Literal(Expr),
+    Expression(Expr),
+    Nest,
 }
 
-struct ParsedField<'a> {
-    ident: &'a Option<Ident>,
-    ty: &'a Type,
-    config: FieldConfig,
+struct FieldLogic {
+    partial_field: proc_macro2::TokenStream,
+    inherit: proc_macro2::TokenStream,
+    simplify: proc_macro2::TokenStream,
+    build: proc_macro2::TokenStream,
+    default: proc_macro2::TokenStream,
 }
 
-/// # Panics
-/// Panics if the input is not a `DataStruct`.
-#[proc_macro_derive(Config, attributes(config))]
-pub fn config_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
-    let struct_name = &ast.ident;
+/// 派生 `InheritConfig` 并自动生成 `Partial` 结构体。
+#[proc_macro_derive(InheritConfig, attributes(config))]
+pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+
     let Data::Struct(DataStruct {
         fields: Fields::Named(fields),
         ..
     }) = &ast.data
     else {
-        return syn::Error::new(
-            ast.ident.span(),
-            "Config macro only supports structs with named fields",
+        return syn::Error::new_spanned(
+            ast.ident,
+            "InheritConfig macro only supports structs with named fields",
         )
         .to_compile_error()
         .into();
     };
-    let mut diagnostics = alloc::vec::Vec::new();
-    let parsed_fields: alloc::vec::Vec<_> = fields
-        .named
-        .iter()
-        .filter_map(|field| match parse_field_config(&field.attrs) {
-            Ok(cfg) => Some(ParsedField {
-                ident: &field.ident,
-                ty: &field.ty,
-                config: cfg,
-            }),
-            Err(e) => {
-                diagnostics.push(e.to_compile_error());
-                None
-            }
-        })
-        .collect();
-    if !diagnostics.is_empty() {
-        return quote! { #(#diagnostics)* }.into();
-    }
-    let default_impl = generate_default_impl(struct_name, &parsed_fields);
-    let inherit_impl = generate_inherit_impl(struct_name, &parsed_fields);
-    let methods_impl = generate_methods_impl(struct_name, &parsed_fields);
-    quote! {
-        #default_impl
-        #inherit_impl
-        #methods_impl
-    }
-    .into()
-}
 
-fn generate_default_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_macro2::TokenStream {
-    let field_defaults = fields.iter().map(|field| {
-        let field_name = field.ident;
-        let field_ty = field.ty;
-        let default_expr = field.config.default.as_ref().map_or_else(
-            || quote! { <#field_ty as ::core::default::Default>::default() },
-            |expr| quote! { #expr },
-        );
-        quote! { #field_name: #default_expr }
-    });
-    quote! {
-        impl ::core::default::Default for #struct_name {
-            fn default() -> Self {
-                Self {
-                    #(#field_defaults),*
-                }
+    let mut partial_fields = Vec::new();
+    let mut inherit_logic = Vec::new();
+    let mut simplify_logic = Vec::new();
+    let mut build_logic = Vec::new();
+    let mut default_logic = Vec::new();
+
+    for field in &fields.named {
+        match process_field(field) {
+            Ok(logic) => {
+                partial_fields.push(logic.partial_field);
+                inherit_logic.push(logic.inherit);
+                simplify_logic.push(logic.simplify);
+                build_logic.push(logic.build);
+                default_logic.push(logic.default);
             }
+            Err(e) => return e.to_compile_error().into(),
         }
     }
+
+    generate_final_code(
+        &ast.ident,
+        &ast.vis,
+        &partial_fields,
+        &inherit_logic,
+        &simplify_logic,
+        &build_logic,
+        &default_logic,
+    )
 }
 
-fn generate_inherit_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_macro2::TokenStream {
-    let field_inherits = fields.iter().map(|field| {
-        let field_name = field.ident;
-        if field.config.skip_inherit {
-            quote! { #field_name: self.#field_name.clone() }
-        } else {
+/// 处理单个字段的配置逻辑
+fn process_field(field: &Field) -> syn::Result<FieldLogic> {
+    let f_name = field
+        .ident
+        .as_ref()
+        .ok_or_else(|| syn::Error::new_spanned(field, "Field must have a name"))?;
+    let f_ty = &field.ty;
+
+    let strategy = parse_strategy(&field.attrs)?;
+
+    let partial_field = match strategy {
+        FieldStrategy::Nest => {
+            let partial_ty = to_partial_type(f_ty);
             quote! {
-                #field_name: ::inherit_config::InheritAble::inherit(&self.#field_name, &other.#field_name)
+                #[serde(skip_serializing_if = "Option::is_none")]
+                pub #f_name: Option<#partial_ty>
             }
         }
-    });
-    let field_simplify = fields.iter().filter_map(|field| {
-        let field_name = field.ident;
-        if field.config.skip_simplify {
-            None
-        } else {
-            Some(quote! {
-                ::inherit_config::InheritAble::simplify(&mut self.#field_name, &other.#field_name);
-            })
+        _ => {
+            quote! {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                pub #f_name: Option<#f_ty>
+            }
         }
-    });
-    quote! {
-        impl ::inherit_config::InheritAble for #struct_name {
-            type Inner = Self;
+    };
 
-            fn inherit(&self, other: &Self) -> Self {
-                Self {
-                    #(#field_inherits),*
+    let (inherit, simplify, build, default) = match strategy {
+        FieldStrategy::Nest => (
+            quote! {
+                match (&mut self.#f_name, &parent.#f_name) {
+                    (Some(s), Some(p)) => s.inherit_from(p),
+                    (None, Some(p)) => self.#f_name = Some(p.clone()),
+                    _ => {}
                 }
-            }
-            fn simplify(&mut self, other: &Self) {
-                #(#field_simplify)*
-            }
-            fn unwrap(self) -> Self::Inner {
-                self
-            }
-        }
-    }
+            },
+            quote! {
+                if let (Some(s), Some(p)) = (&mut self.#f_name, &parent.#f_name) {
+                    s.simplify_from(p);
+                }
+                if self.#f_name == parent.#f_name {
+                    self.#f_name = None;
+                }
+            },
+            quote! { #f_name: self.#f_name.map(|c| c.build()).unwrap_or_else(|| Default::default()) },
+            quote! { #f_name: Default::default() },
+        ),
+        FieldStrategy::Literal(ref expr) => (
+            quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
+            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! { #f_name: self.#f_name.unwrap_or(#expr) },
+            quote! { #f_name: #expr },
+        ),
+        FieldStrategy::Expression(ref expr) => (
+            quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
+            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! { #f_name: self.#f_name.unwrap_or_else(|| #expr) },
+            quote! { #f_name: #expr },
+        ),
+        FieldStrategy::None => (
+            quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
+            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! { #f_name: self.#f_name.unwrap_or_default() },
+            quote! { #f_name: Default::default() },
+        ),
+    };
+
+    Ok(FieldLogic {
+        partial_field,
+        inherit,
+        simplify,
+        build,
+        default,
+    })
 }
 
-fn generate_methods_impl(struct_name: &Ident, fields: &[ParsedField]) -> proc_macro2::TokenStream {
-    let getters = fields.iter().map(|field| {
-        let field_name = field.ident;
-        let field_ty = field.ty;
-        let default_expr = field.config.default.as_ref().map_or_else(
-            || quote! { <#field_ty as ::core::default::Default>::default() },
-            |expr| quote! { #expr },
-        );
-        if field.config.skip_inherit {
-            quote! {
-                #[inline]
-                pub fn #field_name(&self) -> #field_ty {
-                    self.#field_name.clone()
-                }
-            }
-        } else {
-            quote! {
-                #[inline]
-                pub fn #field_name(&self) -> <#field_ty as ::inherit_config::InheritAble>::Inner {
-                    ::inherit_config::InheritAble::unwrap(::inherit_config::InheritAble::inherit(&self.#field_name, &#default_expr))
-                }
-            }
-        }
-    });
-
-    quote! {
-        impl #struct_name {
-            #(#getters)*
-        }
-    }
-}
-
-fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<FieldConfig> {
-    let mut config = FieldConfig::default();
+/// 解析字段上的 `#[config(...)]` 属性
+fn parse_strategy(attrs: &[syn::Attribute]) -> syn::Result<FieldStrategy> {
+    let mut strategy = FieldStrategy::None;
     for attr in attrs {
         if !attr.path().is_ident("config") {
             continue;
         }
-        let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
-        for meta in nested {
-            match meta {
-                Meta::NameValue(nv) if nv.path.is_ident("default") => {
-                    if config.default.is_some() {
-                        return Err(syn::Error::new_spanned(
-                            &nv.path,
-                            "duplicate `default` attribute",
-                        ));
-                    }
-                    config.default = Some(nv.value);
-                }
-                Meta::Path(path) if path.is_ident("skip_inherit") => {
-                    config.skip_inherit = true;
-                }
-                Meta::Path(path) if path.is_ident("skip_simplify") => {
-                    config.skip_simplify = true;
-                }
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        meta,
-                        "unrecognized config attribute",
-                    ));
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("default") {
+                let expr: Expr = meta.value()?.parse()?;
+                strategy = FieldStrategy::Literal(expr);
+            } else if meta.path.is_ident("default_t") {
+                let expr: Expr = meta.value()?.parse()?;
+                strategy = FieldStrategy::Expression(expr);
+            } else if meta.path.is_ident("nest") {
+                strategy = FieldStrategy::Nest;
+            }
+            Ok(())
+        })?;
+    }
+    Ok(strategy)
+}
+
+/// 组装最终的代码 `TokenStream`
+fn generate_final_code(
+    name: &syn::Ident,
+    vis: &syn::Visibility,
+    partial_fields: &[proc_macro2::TokenStream],
+    inherit_logic: &[proc_macro2::TokenStream],
+    simplify_logic: &[proc_macro2::TokenStream],
+    build_logic: &[proc_macro2::TokenStream],
+    default_logic: &[proc_macro2::TokenStream],
+) -> TokenStream {
+    let partial_name = format_ident!("Partial{}", name);
+
+    let expanded = quote! {
+        // 为原始结构体生成 Default 实现
+        impl Default for #name {
+            fn default() -> Self {
+                Self { #(#default_logic),* }
+            }
+        }
+
+        // 生成 Partial 结构体
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+        #vis struct #partial_name {
+            #(#partial_fields),*
+        }
+
+        // 实现 ConfigLayer
+        impl ::inherit_config::ConfigLayer for #partial_name {
+            type Full = #name;
+
+            fn inherit_from(&mut self, parent: &Self) {
+                #(#inherit_logic)*
+            }
+
+            fn simplify_from(&mut self, parent: &Self) {
+                #(#simplify_logic)*
+            }
+
+            fn build(self) -> Self::Full {
+                #name {
+                    #(#build_logic),*
                 }
             }
         }
+    };
+
+    expanded.into()
+}
+
+// 辅助函数：将 Config 转为 PartialConfig
+fn to_partial_type(ty: &Type) -> Type {
+    let mut new_ty = ty.clone();
+    if let Type::Path(type_path) = &mut new_ty {
+        if let Some(segment) = type_path.path.segments.last_mut() {
+            segment.ident = format_ident!("Partial{}", segment.ident);
+        }
     }
-    Ok(config)
+    new_ty
 }
