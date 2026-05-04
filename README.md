@@ -129,3 +129,4 @@ proxy = "local_proxy"
   用于涉及内存分配或需要执行函数调用的复杂类型（如 `String::new()`, `vec![]`, `dirs::home_dir().unwrap()`）。宏会将其转化为 `.unwrap_or_else(|| <expression>)`，**实现真正的惰性求值**。
 - `#[config(nest)]`
   用于标记嵌套配置结构体。宏会自动对该字段进行递归地 `inherit_from`、`simplify_from` 和 `build` 操作。注意被嵌套的结构体也必须 Derive 了 `InheritConfig`。
+- `#[config(partial_attr(...))]` 用于在影子结构体上传递自定义属性如 `#[config(partial_attr(serde(with = "humantime_serde")))]`。

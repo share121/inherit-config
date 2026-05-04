@@ -17,6 +17,11 @@ struct FieldLogic {
     default: proc_macro2::TokenStream,
 }
 
+struct ParsedFieldConfig {
+    strategy: FieldStrategy,
+    partial_attrs: Vec<proc_macro2::TokenStream>,
+}
+
 /// 派生 `InheritConfig` 并自动生成 `Partial` 结构体。
 #[proc_macro_derive(InheritConfig, attributes(config))]
 pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
@@ -34,6 +39,24 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     };
+
+    // 解析结构体级别的 partial_attr
+    let mut struct_partial_attrs = Vec::new();
+    for attr in &ast.attrs {
+        if attr.path().is_ident("config") {
+            if let Err(e) = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("partial_attr") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    let tokens: proc_macro2::TokenStream = content.parse()?;
+                    struct_partial_attrs.push(tokens);
+                }
+                Ok(())
+            }) {
+                return e.to_compile_error().into();
+            }
+        }
+    }
 
     let mut partial_fields = Vec::new();
     let mut inherit_logic = Vec::new();
@@ -57,6 +80,7 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
     generate_final_code(
         &ast.ident,
         &ast.vis,
+        &struct_partial_attrs,
         &partial_fields,
         &inherit_logic,
         &simplify_logic,
@@ -73,18 +97,32 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
         .ok_or_else(|| syn::Error::new_spanned(field, "Field must have a name"))?;
     let f_ty = &field.ty;
 
-    let strategy = parse_strategy(&field.attrs)?;
+    let parsed = parse_field_config(&field.attrs)?;
+    let strategy = parsed.strategy;
+    let p_attrs = parsed.partial_attrs;
+
+    // 自动透传文档注释 ///
+    let mut doc_attrs = Vec::new();
+    for attr in &field.attrs {
+        if attr.path().is_ident("doc") {
+            doc_attrs.push(attr.clone());
+        }
+    }
 
     let partial_field = match strategy {
         FieldStrategy::Nest => {
             let partial_ty = to_partial_type(f_ty);
             quote! {
+                #(#doc_attrs)*
+                #( #[#p_attrs] )*
                 #[serde(skip_serializing_if = "Option::is_none")]
                 pub #f_name: Option<#partial_ty>
             }
         }
         _ => {
             quote! {
+                #(#doc_attrs)*
+                #( #[#p_attrs] )*
                 #[serde(skip_serializing_if = "Option::is_none")]
                 pub #f_name: Option<#f_ty>
             }
@@ -141,8 +179,10 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
 }
 
 /// 解析字段上的 `#[config(...)]` 属性
-fn parse_strategy(attrs: &[syn::Attribute]) -> syn::Result<FieldStrategy> {
+fn parse_field_config(attrs: &[syn::Attribute]) -> syn::Result<ParsedFieldConfig> {
     let mut strategy = FieldStrategy::None;
+    let mut partial_attrs = Vec::new();
+
     for attr in attrs {
         if !attr.path().is_ident("config") {
             continue;
@@ -156,17 +196,27 @@ fn parse_strategy(attrs: &[syn::Attribute]) -> syn::Result<FieldStrategy> {
                 strategy = FieldStrategy::Expression(expr);
             } else if meta.path.is_ident("nest") {
                 strategy = FieldStrategy::Nest;
+            } else if meta.path.is_ident("partial_attr") {
+                let content;
+                syn::parenthesized!(content in meta.input);
+                let tokens: proc_macro2::TokenStream = content.parse()?;
+                partial_attrs.push(tokens);
             }
             Ok(())
         })?;
     }
-    Ok(strategy)
+    Ok(ParsedFieldConfig {
+        strategy,
+        partial_attrs,
+    })
 }
 
 /// 组装最终的代码 `TokenStream`
+#[allow(clippy::too_many_arguments)]
 fn generate_final_code(
     name: &syn::Ident,
     vis: &syn::Visibility,
+    struct_partial_attrs: &[proc_macro2::TokenStream],
     partial_fields: &[proc_macro2::TokenStream],
     inherit_logic: &[proc_macro2::TokenStream],
     simplify_logic: &[proc_macro2::TokenStream],
@@ -186,6 +236,7 @@ fn generate_final_code(
         // 生成 Partial 结构体
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+        #( #[#struct_partial_attrs] )*
         #vis struct #partial_name {
             #(#partial_fields),*
         }
