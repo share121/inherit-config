@@ -6,81 +6,126 @@
 [![Documentation](https://docs.rs/inherit-config/badge.svg)](https://docs.rs/inherit-config)
 [![License](https://img.shields.io/crates/l/inherit-config.svg)](https://github.com/share121/inherit-config/blob/master/LICENSE)
 
-一个 Rust 库，提供了一个派生宏（derive macro）来轻松实现可继承的配置模式。
+`inherit-config` 是一个专为 Rust 打造的轻量级、零样板代码的**层级配置管理库**。
 
-## 概述
+它通过派生宏自动实现 **Partial Struct Pattern（部分结构体模式）**，优雅地解决了多层级配置（如：程序默认值 -> 全局配置 -> 任务特有配置）的合并、提取以及**差分保存**问题。
 
-在许多应用程序中，配置是通过多个层级来确定的。例如，可能有一个全局的默认配置，然后是一个用户级的配置，最后是一个项目级的配置，每一层都可以覆盖前一层的值。
+## ✨ 核心特性
 
-`inherit-config` 通过提供一个 `#[derive(Config)]` 宏来简化这个过程，该宏会自动为您的结构体实现 `Default` 和一个自定义的 `InheritAble` trait。这使得您可以轻松地合并多个不同层级的配置对象。
+- 👯‍♂️ **自动生成 Partial 结构体**：只需要定义你业务所需的强类型配置对象，宏会自动为你生成一个所有字段均为 `Option<T>` 的影子配置类，用于解析和合并。
+- 🚫 **业务逻辑零 `Option`**：调用 `.build()` 后，你将获得一个全量配置对象，彻底告别在业务代码中到处写 `.unwrap()`。
+- ✂️ **差分保存 (Differential Saving)**：调用 `.simplify_from(parent)` 后，它能将子配置与父配置进行比对，自动剔除完全相同的字段。配合 `serde`，实现只记录覆盖项。
+- 🪆 **支持深层嵌套**：通过 `#[config(nest)]` 属性，支持复杂配置的递归合并与递归化简。
+- 🚀 **零开销的默认值推导**：支持常量的 `default = ...` 和按需惰性计算的表达式 `default_t = ...`。
 
-### 核心组件
+## 📦 安装
 
-- **`InheritAble` Trait**: 一个简单的 trait，定义了 `inherit(&self, other: &Self) -> Self` 方法，用于实现继承逻辑；定义了 `fn simplify(&mut self, other: &Self)`，用于化简配置。
-- **`ConfigField<T>` Enum**: 一个辅助枚举，用于表示一个配置项的三种状态：
-  - `Inherit`: 字段应从父配置继承其值。这是默认状态。
-  - `Set(T)`: 字段有一个明确设置的值，它将覆盖父配置。
-  - `Unset`: 字段被显式地标记为“未设置”，它将覆盖父配置。
-- **`#[derive(Config)]`**: 过程宏，它为您的结构体生成 `Default` 和 `InheritAble` 的实现代码。
-
-## 安装
-
-将以下内容添加到您的 `Cargo.toml` 文件中：
+在你的 `Cargo.toml` 中添加：
 
 ```toml
 [dependencies]
-inherit-config = { version = "0.1.1", features = ["derive"] } # 包含核心 trait 和派生宏
+inherit-config = "0.2.0"
+serde = { version = "1.0", features = ["derive"] }
 ```
 
-如果只需要核心 trait 和类型而不需要派生宏，可以省略 `features`：
+## 🚀 快速开始
 
-```toml
-[dependencies]
-inherit-config = "0.1.1"
-```
-
-## 使用方法
+### 1. 定义配置模型
 
 ```rust
-use inherit_config::{ConfigField, InheritAble, Config};
+use inherit_config::{ConfigLayer, InheritConfig};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Config)]
-struct AppConfig {
-    #[config(default = ConfigField::Unset)]
-    proxy: ConfigField<String>,
+#[derive(InheritConfig, Clone, Debug, Serialize, Deserialize)]
+pub struct DownloadConfig {
+    // 基础字面量，当缺失时将回退到 32
+    #[config(default = 32)]
+    pub threads: usize,
 
-    #[config(default = ConfigField::Set("Referer: https://example.com/".to_string()))]
-    headers: ConfigField<String>,
-
-    #[config(default = Some(16))]
-    font_size: Option<u32>,
-
-    // 对于没有实现 InheritAble 的类型，您需要手动实现 inherit 方法或者添加 `skip_inherit` 属性。
-    #[config(default = 1, skip_inherit)]
-    foo: i32,
+    // 支持任意 Rust 表达式！采用延迟求值，避免不必要的内存分配
+    #[config(default_t = String::from("system"))]
+    pub proxy: String,
 }
 
-fn main() {
-    // 1. 创建一个全局配置
-    let global_config = AppConfig::default();
+#[derive(InheritConfig, Clone, Debug, Serialize, Deserialize)]
+pub struct Task {
+    #[config(default_t = String::from("http://default.com"))]
+    pub url: String,
 
-    // 2. 创建一个“局部”配置
-    let mut local_config = AppConfig {
-        proxy: ConfigField::Inherit,
-        headers: ConfigField::Unset,
-        font_size: Some(12),
-        foo: 2,
-    };
-
-    // 3. 将局部配置与全局配置合并
-    let final_config = local_config.inherit(&global_config);
-
-    // 4. 验证结果
-    assert_eq!(final_config, AppConfig {
-        proxy: ConfigField::Unset, // 继承自 `global_config`
-        headers: ConfigField::Unset, // 覆盖 `global_config` 的值
-        font_size: Some(12), // 覆盖 `global_config` 的值
-        foo: 2, // 覆盖 `global_config` 的值
-    });
+    // 声明为嵌套配置，将递归处理合并与化简
+    #[config(nest)]
+    pub config: DownloadConfig,
 }
 ```
+
+### 2. 合并层级配置 (Inherit)
+
+通常用于程序启动加载时：`任务配置 -> 继承全局配置 -> 缺失项使用默认值`。
+
+```rust
+// 1. 假设这是从 settings.toml 中反序列化出来的全局配置
+let global_config = PartialTask {
+    url: None,
+    config: Some(PartialDownloadConfig {
+        threads: Some(16),
+        proxy: Some("global_proxy".to_string()),
+    }),
+};
+
+// 2. 假设这是从 task.toml 中反序列化出来的具体任务配置
+let mut task_config = PartialTask {
+    url: Some("http://example.com/file.zip".to_string()),
+    config: Some(PartialDownloadConfig {
+        threads: Some(8), // 覆盖了线程数
+        proxy: None,      // 没填代理，想要继承全局
+    }),
+};
+
+// 3. 执行继承合并
+task_config.inherit_from(&global_config);
+
+// 4. 固化为全量业务对象 (No Options!)
+let final_task: Task = task_config.build();
+
+assert_eq!(final_task.config.threads, 8);               // 任务自身的值
+assert_eq!(final_task.config.proxy, "global_proxy");    // 继承自全局
+```
+
+### 3. 神奇的差分保存 (Simplify)
+
+当用户在 UI 或程序中修改了某个任务的配置，你想把它保存回 `task.toml`，但**只想保存那些与全局配置不一样的地方**。
+
+```rust
+let mut task_to_save = PartialTask {
+    url: Some("http://example.com/file.zip".to_string()),
+    config: Some(PartialDownloadConfig {
+        threads: Some(16), // 用户改成了 16，但和全局配置一模一样！
+        proxy: Some("local_proxy".to_string()), // 这个和全局不一样
+    }),
+};
+
+// 执行化简：自动比对并剔除相同的字段
+task_to_save.simplify_from(&global_config);
+
+// 将精简后的对象序列化为 TOML
+let toml_str = toml::to_string(&task_to_save).unwrap();
+println!("{}", toml_str);
+```
+
+**输出的 TOML 极其干净，`threads = 16` 消失了！**
+
+```toml
+url = "http://example.com/file.zip"
+
+[config]
+proxy = "local_proxy"
+```
+
+## 🏷️ 属性指南
+
+- `#[config(default = <literal>)]`
+  用于简单的字面量或常量（如 `32`, `true`, `"str"`）。宏会将其转化为 `.unwrap_or(<literal>)` 以获得最佳性能。
+- `#[config(default_t = <expression>)]`
+  用于涉及内存分配或需要执行函数调用的复杂类型（如 `String::new()`, `vec![]`, `dirs::home_dir().unwrap()`）。宏会将其转化为 `.unwrap_or_else(|| <expression>)`，**实现真正的惰性求值**。
+- `#[config(nest)]`
+  用于标记嵌套配置结构体。宏会自动对该字段进行递归地 `inherit_from`、`simplify_from` 和 `build` 操作。注意被嵌套的结构体也必须 Derive 了 `InheritConfig`。
