@@ -1,7 +1,7 @@
 [package]
 name = "inherit-config-derive"
 description = "A derive macro to inherit config from parent struct"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
