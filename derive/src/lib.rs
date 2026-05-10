@@ -15,6 +15,7 @@ struct FieldLogic {
     simplify: proc_macro2::TokenStream,
     build: proc_macro2::TokenStream,
     default: proc_macro2::TokenStream,
+    from_full: proc_macro2::TokenStream,
 }
 
 struct ParsedFieldConfig {
@@ -70,6 +71,7 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
     let mut simplify_logic = Vec::new();
     let mut build_logic = Vec::new();
     let mut default_logic = Vec::new();
+    let mut from_full_logic = Vec::new();
 
     for field in &fields.named {
         match process_field(field) {
@@ -79,6 +81,7 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
                 simplify_logic.push(logic.simplify);
                 build_logic.push(logic.build);
                 default_logic.push(logic.default);
+                from_full_logic.push(logic.from_full);
             }
             Err(e) => return e.to_compile_error().into(),
         }
@@ -93,6 +96,7 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
         &simplify_logic,
         &build_logic,
         &default_logic,
+        &from_full_logic,
     )
 }
 
@@ -116,24 +120,28 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
         }
     }
 
-    let partial_field = match strategy {
-        FieldStrategy::Nest => {
-            let partial_ty = to_partial_type(f_ty);
-            quote! {
-                #(#doc_attrs)*
-                #( #[#p_attrs] )*
-                #[serde(skip_serializing_if = "Option::is_none")]
-                pub #f_name: Option<#partial_ty>
-            }
+    let partial_field = if matches!(strategy, FieldStrategy::Nest) {
+        let partial_ty = to_partial_type(f_ty);
+        quote! {
+            #(#doc_attrs)*
+            #( #[#p_attrs] )*
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub #f_name: Option<#partial_ty>
         }
-        _ => {
-            quote! {
-                #(#doc_attrs)*
-                #( #[#p_attrs] )*
-                #[serde(skip_serializing_if = "Option::is_none")]
-                pub #f_name: Option<#f_ty>
-            }
+    } else {
+        quote! {
+            #(#doc_attrs)*
+            #( #[#p_attrs] )*
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub #f_name: Option<#f_ty>
         }
+    };
+
+    let from_full = if matches!(strategy, FieldStrategy::Nest) {
+        let partial_ty = to_partial_type(f_ty);
+        quote! { #f_name: Some(#partial_ty::from_full(full.#f_name)) }
+    } else {
+        quote! { #f_name: Some(full.#f_name) }
     };
 
     let (inherit, simplify, build, default) = match strategy {
@@ -182,6 +190,7 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
         simplify,
         build,
         default,
+        from_full,
     })
 }
 
@@ -229,6 +238,7 @@ fn generate_final_code(
     simplify_logic: &[proc_macro2::TokenStream],
     build_logic: &[proc_macro2::TokenStream],
     default_logic: &[proc_macro2::TokenStream],
+    from_full_logic: &[proc_macro2::TokenStream],
 ) -> TokenStream {
     let partial_name = format_ident!("Partial{}", name);
 
@@ -264,6 +274,18 @@ fn generate_final_code(
                 #name {
                     #(#build_logic),*
                 }
+            }
+
+            fn from_full(full: Self::Full) -> Self {
+                Self {
+                    #(#from_full_logic),*
+                }
+            }
+        }
+
+        impl From<#name> for #partial_name {
+            fn from(full: #name) -> Self {
+                <Self as ::inherit_config::ConfigLayer>::from_full(full)
             }
         }
     };

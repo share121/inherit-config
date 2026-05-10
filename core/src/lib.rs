@@ -14,4 +14,7 @@ pub trait ConfigLayer {
 
     /// 构建全量结构体：填补所有空白字段为默认值
     fn build(self) -> Self::Full;
+
+    /// 从全量结构体构造 Partial：所有字段包装为 Some
+    fn from_full(full: Self::Full) -> Self;
 }

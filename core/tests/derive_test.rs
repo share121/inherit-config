@@ -130,3 +130,44 @@ fn test_simplify_logic_for_diff_saving() {
     assert_eq!(child_retry.max_retries, None); // 被成功化简
     assert_eq!(child_retry.strategy, None); // 被成功化简
 }
+
+#[test]
+fn test_from_full() {
+    // 构造一个 Full Config
+    let full = Task {
+        url: "http://example.com".to_string(),
+        config: DownloadConfig {
+            threads: 16,
+            proxy: "custom_proxy".to_string(),
+            retry: RetryConfig {
+                max_retries: 5,
+                strategy: "linear".to_string(),
+            },
+        },
+    };
+
+    // 方式一：通过 trait 方法转换
+    let partial = PartialTask::from_full(full.clone());
+    assert_eq!(partial.url, Some("http://example.com".to_string()));
+    let cfg = partial.config.as_ref().unwrap();
+    assert_eq!(cfg.threads, Some(16));
+    assert_eq!(cfg.proxy.as_ref(), Some(&"custom_proxy".to_string()));
+    let retry = cfg.retry.as_ref().unwrap();
+    assert_eq!(retry.max_retries, Some(5));
+    assert_eq!(retry.strategy.as_ref(), Some(&"linear".to_string()));
+
+    // build 回去应该得到相同的 Full
+    let roundtrip = partial.clone().build();
+    assert_eq!(roundtrip.url, full.url);
+    assert_eq!(roundtrip.config.threads, full.config.threads);
+    assert_eq!(roundtrip.config.proxy, full.config.proxy);
+    assert_eq!(
+        roundtrip.config.retry.max_retries,
+        full.config.retry.max_retries
+    );
+    assert_eq!(roundtrip.config.retry.strategy, full.config.retry.strategy);
+
+    // 方式二：通过 From/Into trait
+    let partial2: PartialTask = full.into();
+    assert_eq!(partial2.url, Some("http://example.com".to_string()));
+}
