@@ -126,9 +126,7 @@ fn test_simplify_logic_for_diff_saving() {
     assert_eq!(child_config.threads, None); // 被成功化简
     assert_eq!(child_config.proxy, Some("local_proxy".to_string())); // 保留了差异
 
-    let child_retry = child_config.retry.unwrap();
-    assert_eq!(child_retry.max_retries, None); // 被成功化简
-    assert_eq!(child_retry.strategy, None); // 被成功化简
+    assert_eq!(child_config.retry, None); // 被成功化简
 }
 
 #[test]
