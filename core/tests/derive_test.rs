@@ -160,8 +160,8 @@ fn test_simplify_nest_default() {
     };
 
     let mut child = PartialDownloadConfig {
-        threads: Some(100),                            // 和 parent 相同 → None
-        proxy: Some("local_proxy".to_string()),         // 和 parent 不同 → 保留
+        threads: Some(100),                     // 和 parent 相同 → None
+        proxy: Some("local_proxy".to_string()), // 和 parent 不同 → 保留
         retry: Some(PartialRetryConfig {
             max_retries: Some(3),                        // 默认值 3 → None
             strategy: Some(String::from("exponential")), // 默认值 → None
