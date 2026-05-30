@@ -130,6 +130,27 @@ fn test_simplify_logic_for_diff_saving() {
 }
 
 #[test]
+fn test_simplify_default_value() {
+    // parent 没设 max_retries (None → 走默认值 3)，child 显式设了 3（和默认值一样）
+    let parent = PartialRetryConfig {
+        max_retries: None,
+        strategy: None,
+    };
+
+    let mut child = PartialRetryConfig {
+        max_retries: Some(3),
+        strategy: Some(String::from("exponential")),
+    };
+
+    child.simplify_from(&parent);
+
+    // max_retries parent=None, child=Some(3)==default(3) → 化简为 None
+    assert_eq!(child.max_retries, None);
+    // strategy parent=None, child=Some("exponential")==default_t(String::from("exponential")) → 化简为 None
+    assert_eq!(child.strategy, None);
+}
+
+#[test]
 fn test_from_full() {
     // 构造一个 Full Config
     let full = Task {

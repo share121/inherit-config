@@ -101,6 +101,7 @@ pub fn inherit_config_derive(input: TokenStream) -> TokenStream {
 }
 
 /// 处理单个字段的配置逻辑
+#[allow(clippy::too_many_lines)]
 fn process_field(field: &Field) -> syn::Result<FieldLogic> {
     let f_name = field
         .ident
@@ -166,19 +167,37 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
         ),
         FieldStrategy::Literal(ref expr) => (
             quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
-            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! {
+                if self.#f_name == parent.#f_name
+                    || (parent.#f_name.is_none() && self.#f_name == Some(#expr))
+                {
+                    self.#f_name = None;
+                }
+            },
             quote! { #f_name: self.#f_name.unwrap_or(#expr) },
             quote! { #f_name: #expr },
         ),
         FieldStrategy::Expression(ref expr) => (
             quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
-            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! {
+                if self.#f_name == parent.#f_name
+                    || (parent.#f_name.is_none() && self.#f_name == Some(#expr))
+                {
+                    self.#f_name = None;
+                }
+            },
             quote! { #f_name: self.#f_name.unwrap_or_else(|| #expr) },
             quote! { #f_name: #expr },
         ),
         FieldStrategy::None => (
             quote! { if self.#f_name.is_none() { self.#f_name = parent.#f_name.clone(); } },
-            quote! { if self.#f_name == parent.#f_name { self.#f_name = None; } },
+            quote! {
+                if self.#f_name == parent.#f_name
+                    || (parent.#f_name.is_none() && self.#f_name == Some(Default::default()))
+                {
+                    self.#f_name = None;
+                }
+            },
             quote! { #f_name: self.#f_name.unwrap_or_default() },
             quote! { #f_name: Default::default() },
         ),
