@@ -157,6 +157,8 @@ fn process_field(field: &Field) -> syn::Result<FieldLogic> {
             quote! {
                 if let (Some(s), Some(p)) = (&mut self.#f_name, &parent.#f_name) {
                     s.simplify_from(p);
+                } else if let Some(s) = &mut self.#f_name {
+                    s.simplify_from(&Default::default());
                 }
                 if self.#f_name == parent.#f_name || self.#f_name == Some(Default::default()) {
                     self.#f_name = None;

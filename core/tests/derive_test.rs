@@ -151,6 +151,31 @@ fn test_simplify_default_value() {
 }
 
 #[test]
+fn test_simplify_nest_default() {
+    // parent 没设 retry (None → 走默认值)，child 显式设了所有字段且都等于默认值
+    let parent = PartialDownloadConfig {
+        threads: Some(100),
+        proxy: Some("global_proxy".to_string()),
+        retry: None,
+    };
+
+    let mut child = PartialDownloadConfig {
+        threads: Some(100),                            // 和 parent 相同 → None
+        proxy: Some("local_proxy".to_string()),         // 和 parent 不同 → 保留
+        retry: Some(PartialRetryConfig {
+            max_retries: Some(3),                        // 默认值 3 → None
+            strategy: Some(String::from("exponential")), // 默认值 → None
+        }),
+    };
+
+    child.simplify_from(&parent);
+
+    assert_eq!(child.threads, None);
+    assert_eq!(child.proxy, Some("local_proxy".to_string()));
+    assert_eq!(child.retry, None); // 全部是默认值 → 整个化简掉
+}
+
+#[test]
 fn test_from_full() {
     // 构造一个 Full Config
     let full = Task {
