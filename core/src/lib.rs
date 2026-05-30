@@ -9,7 +9,7 @@ pub trait ConfigLayer {
     /// 继承合并：如果自己为空，则向 parent 借用
     fn inherit_from(&mut self, parent: &Self);
 
-    /// 差分化简：如果自己与 parent 完全一样，则设为 None
+    /// 差分化简：移除与 parent 相同的字段，以及 parent 未设置时与默认值相同的字段
     fn simplify_from(&mut self, parent: &Self);
 
     /// 构建全量结构体：填补所有空白字段为默认值
